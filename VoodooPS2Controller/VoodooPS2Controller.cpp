@@ -369,7 +369,7 @@ IOReturn ApplePS2Controller::setProperties(OSObject* props)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-void ApplePS2Controller::resetController(bool wakeup)
+void ApplePS2Controller::resetController()
 {
     _suppressTimeout = true;
     UInt8 commandByte;
@@ -408,25 +408,6 @@ void ApplePS2Controller::resetController(bool wakeup)
     writeCommandPort(kCP_SetCommandByte);
     writeDataPort(commandByte);
     DEBUG_LOG("%s: new commandByte = %02x\n", getName(), commandByte);
-  
-    if (wakeup && _muxPresent)
-    {
-        setMuxMode(true);
-    }
-    else if (!wakeup)
-    {
-        _muxPresent = setMuxMode(true);
-        _nubsCount = _muxPresent ? kPS2MuxMaxIdx : kPS2AuxMaxIdx;
-    }
-  
-    resetDevices();
-  
-    //
-    // Clear out garbage in the controller's input streams, before starting up
-    // the work loop.
-    //
-  
-    flushDataPort();
 }
 
 // -- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -532,8 +513,26 @@ bool ApplePS2Controller::start(IOService * provider)
     
   PE_parse_boot_argn("ps2rst", &_resetControllerFlag, sizeof(_resetControllerFlag));
   if (_resetControllerFlag & RESET_CONTROLLER_ON_BOOT) {
-    resetController(false);
+    resetController();
   }
+  
+  //
+  // Enable mux mode if able
+  //
+  
+  _muxPresent = setMuxMode(true);
+  _nubsCount = _muxPresent ? kPS2MuxMaxIdx : kPS2AuxMaxIdx;
+  
+  if (_resetControllerFlag & RESET_CONTROLLER_ON_BOOT) {
+    resetDevices();
+  }
+  
+  //
+  // Clear out garbage in the controller's input streams, before starting up
+  // the work loop.
+  //
+  
+  flushDataPort();
 
   //
   // Use a spin lock to protect the client async request queue.
@@ -1858,8 +1857,16 @@ void ApplePS2Controller::setPowerStateGated( UInt32 powerState )
         
         if (_resetControllerFlag & RESET_CONTROLLER_ON_WAKEUP)
         {
-          resetController(true);
+          resetController();
+          
+          if (_muxPresent) {
+              setMuxMode(true);
+          }
+          
+          resetDevices();
         }
+        
+        flushDataPort();
 
 #endif // FULL_INIT_AFTER_WAKE
 
